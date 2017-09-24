@@ -13,15 +13,16 @@ program cicpower
   integer(4) rhoc(nt,nt,nt,nnt,nnt,nnt)
   real(4) rho_grid(0:ng+1,0:ng+1,0:ng+1)[*],rho0(ng,ng,ng),rho1(ng,ng,ng)
   real(4) mass_p,pos1(3),dx1(3),dx2(3)
-  integer(izipx) x(3,npmax)
+  real(8) rho8[*]
+  integer(izipx) xp(3,npmax)
 
   real xi(10,nbin)[*]
-
+  character(20) str_z,str_i
   call geometry
-
   if (head) then
     print*, 'cicpower on resolution:'
     print*, 'ng=',ng
+    print*, 'ng*nn=',ng*nn
   endif
   sync all
 
@@ -63,7 +64,7 @@ program cicpower
     if (head) print*, 'nplocal =',nplocal
 
     open(10,file=output_name('zip0'),status='old',action='read',access='stream')
-    read(10) x(:,:nplocal) ! particle Eulerian positions
+    read(10) xp(:,:nplocal) ! particle Eulerian positions
     close(10)
 
     rho0=0
@@ -78,7 +79,7 @@ program cicpower
         np=rhoc(i,j,k,itx,ity,itz)
         do l=1,np
           ip=nlast+l
-          pos1=nt*((/itx,ity,itz/)-1)+ ((/i,j,k/)-1) + (int(x(:,ip)+ishift,izipx)+rshift)*x_resolution
+          pos1=nt*((/itx,ity,itz/)-1)+ ((/i,j,k/)-1) + (int(xp(:,ip)+ishift,izipx)+rshift)*x_resolution
           pos1=pos1*real(ng)/real(nc) - 0.5
 
           idx1=floor(pos1)+1
@@ -103,8 +104,6 @@ program cicpower
     enddo
     enddo
     sync all
-    print*, 'sum of rho_grid (with buffer) = '
-    print*, sum(rho_grid*1d0)
 
     if (head) print*, 'Start sync from buffer regions'
     sync all
@@ -119,29 +118,63 @@ program cicpower
     sync all
 
     rho1=rho_grid(1:ng,1:ng,1:ng)
-    print*, 'check: min,max,sum of rho_grid = '
-    print*, minval(rho1),maxval(rho1),sum(rho1*1d0)
+    !print*, 'check: min,max,sum of rho_grid = '
+    !print*, minval(rho1),maxval(rho1),sum(rho1*1d0)
+    
+    rho8=sum(rho1*1d0)
+    sync all
+
+    ! co_sum
+    if (head) then
+      do i=2,nn**3
+        rho8=rho8+rho8[i]
+      enddo
+      print*,'rho_global',rho8,ng_global
+    endif
+    sync all
+    rho8=rho8[1]
+    sync all
 
     ! convert to density contrast
-    rho1=rho1/(sum(rho1*1d0)/ng/ng/ng)-1
+    rho1=rho1/(rho8/ng_global/ng_global/ng_global)-1
+
+    ! check normalization
+    print*, minval(rho1),maxval(rho1),sum(rho1*1d0)/ng/ng/ng
+    sync all
 
     if (head) print*,'Write rho_grid into file'
     open(15,file=output_name('delta_N'),status='replace',access='stream')
     write(15) rho1
+!print*, rho1(1,1,1)
     close(15)
+    sync all
 
+
+    
     ! cross correlate correct density field
-    open(15,file='../output/universe1/image1/0.000delta_N_1.bin',access='stream')
+    write(str_i,'(i6)') image
+    write(str_z,'(f7.3)') z_checkpoint(cur_checkpoint)
+    !open(15,file=output_name('delta_N'),access='stream')
+    open(15,file='../output/universe5/image'//&
+                  trim(adjustl(str_i))//'/'//trim(adjustl(str_z))//'delta_N'//&
+                  output_suffix(),access='stream')
     read(15) rho0
     close(15)
     print*, 'mean error', sum(abs(rho1-rho0)*1d0)/ng/ng/ng
+    sync all
 
     call cross_power(xi,rho1,rho0)
-    open(15,file=output_name('cicpower'),status='replace',access='stream')
-    write(15) xi
-    close(15)
+    sync all
+    if (head) then
+      open(15,file=output_name('cicpower'),status='replace',access='stream')
+      write(15) xi
+      close(15)
+    endif
+    sync all
 
   enddo
   call destroy_penfft_plan
-  print*,'cicpower done'
+  sync all
+  if (head) print*,'cicpower done'
+  sync all
 end

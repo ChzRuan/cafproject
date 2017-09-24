@@ -10,8 +10,8 @@ module pencil_fft
   ! fft arrays
   real        r3(ng,ng,ng),r0(ng,ng)
   complex     c3(ng/2,ng,ng)
-  real        rxyz(ng*nn+2  ,ng,npen)
-  complex     cxyz(ng*nn/2+1,ng,npen)
+  real        rxyz(ng_global+2  ,ng,npen)
+  complex     cxyz(ng_global/2+1,ng,npen)
   complex     cyyyxz(npen,nn,nn,ng/2+1,npen)
   complex     cyyxz(ng,     nn,ng/2+1,npen)
   complex     czzzxy(npen,nn,nn,ng/2+1,npen)
@@ -40,6 +40,7 @@ module pencil_fft
     call sfftw_execute(planz)
     call z2y
     call y2x
+    sync all
   endsubroutine
 
   subroutine pencil_fft_backward
@@ -54,7 +55,8 @@ module pencil_fft
     call y2x
     call sfftw_execute(iplanx)
     call x2c
-    r3=r3/(ng*nn)/(ng*nn)/(ng*nn)
+    r3=r3/ng_global/ng_global/ng_global
+    sync all
   endsubroutine
 
   subroutine c2x
@@ -152,8 +154,6 @@ module pencil_fft
       do i1=1,nn
         ctransfer1(:,:,i1)=cxyz(ng*(i1-1)/2+1:ng*i1/2,:,islab)
       enddo
-!if (this_image()==5) print*,ctransfer1
-!stop
       sync all
       do i1=1,nn
         c3(:,:,islab+(i1-1)*npen)=ctransfer1(:,:,m1)[image1d(m2,i1,m3)]
@@ -166,12 +166,17 @@ module pencil_fft
     implicit none
     save
     include 'fftw3.f'
+print*,'a'
+sync all
     call sfftw_plan_many_dft_r2c(planx,1,ng*nn,ng*npen,cxyz,NULL,1,ng*nn+2,cxyz,NULL,1,ng*nn/2+1,FFTW_MEASURE)
+print*,'b'
+sync all
     call sfftw_plan_many_dft_c2r(iplanx,1,ng*nn,ng*npen,cxyz,NULL,1,ng*nn/2+1,cxyz,NULL,1,ng*nn+2,FFTW_MEASURE)
     call sfftw_plan_many_dft(plany,1,ng*nn,(ng/2+1)*npen,cyyxz,NULL,1,ng*nn,cyyxz,NULL,1,ng*nn,FFTW_FORWARD,FFTW_MEASURE)
     call sfftw_plan_many_dft(iplany,1,ng*nn,(ng/2+1)*npen,cyyxz,NULL,1,ng*nn,cyyxz,NULL,1,ng*nn,FFTW_BACKWARD,FFTW_MEASURE)
     call sfftw_plan_many_dft(planz,1,ng*nn,(ng/2+1)*npen,czzzxy,NULL,1,ng*nn,czzzxy,NULL,1,ng*nn,FFTW_FORWARD,FFTW_MEASURE)
     call sfftw_plan_many_dft(iplanz,1,ng*nn,(ng/2+1)*npen,czzzxy,NULL,1,ng*nn,czzzxy,NULL,1,ng*nn,FFTW_BACKWARD,FFTW_MEASURE)
+    sync all
   endsubroutine
 
   subroutine destroy_penfft_plan
@@ -184,5 +189,6 @@ module pencil_fft
     call sfftw_destroy_plan(iplany)
     call sfftw_destroy_plan(planz)
     call sfftw_destroy_plan(iplanz)
+    sync all
   endsubroutine
 endmodule

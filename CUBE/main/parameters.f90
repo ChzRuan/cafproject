@@ -2,12 +2,14 @@ module parameters
   implicit none
   save
 
-  ! output directory for both IC and snapshots
-  character(*),parameter :: opath='../output/universe5/'
+  include 'universe1.fh'
+  !! output directory for both IC and snapshots
+  !character(*),parameter :: opath='../output/universe1/'
+  !
+  !! simulation parameters
+  !integer(8),parameter :: izipx=2
+  !integer(8),parameter :: izipv=2
 
-  ! simulation parameters
-  integer(8),parameter :: izipx=1 ! 1 or 2, for particle location
-  integer(8),parameter :: izipv=1 ! 1 or 2, for particle velocity
   integer(8),parameter :: nvbin=int(2,8)**(8*izipv)
   integer(8),parameter :: ishift=-(int(2,8)**(izipx*8-1))
   real(8),parameter :: rshift=0.5-ishift
@@ -15,14 +17,15 @@ module parameters
   ! (hereafter 'number of fine cells' = 'nf')
   ! (hereafter 'number of coarse cells' = 'nc')
   ! (hereafter 'per dimension' = '/dim')
-  integer(8),parameter :: nn=1 ! number of imgages (nodes) /dim
+  integer(8),parameter :: nn=4 ! number of imgages (nodes) /dim
   integer(8),parameter :: ncell=4 ! number of nf in each nc, /dim
   integer(8),parameter :: nnt=2 ! number of tiles /image/dim
-  integer(8),parameter :: nc=64 ! nc/image/dim, in physical volume, >=24
+  integer(8),parameter :: nc=128 ! nc/image/dim, in physical volume, >=24
   integer(8),parameter :: nt=nc/nnt ! nc/tile/dim, in physical volume, >=12
 
   integer(8),parameter :: nf=nc*ncell ! >=96
   integer(8),parameter :: nf_global=nf*nn
+  integer(8),parameter :: nc_global=nc*nn
   integer(8),parameter :: nft=nt*ncell ! >=48
 
   ! ngrid /image/dim for pencil-fft
@@ -51,15 +54,15 @@ module parameters
 
   real,parameter :: rsoft=0.1 ! PP softening length
   logical,parameter :: np_2n3=.false. ! if there are 2*N**3 particles
-  real,parameter :: image_buffer=1.5
-  real,parameter :: tile_buffer=2.0
+  real,parameter :: image_buffer=2.0
+  real,parameter :: tile_buffer=3.0
 
   ! cosmological parameters
   real,parameter :: z_i=49.0   ! initial redshift
   real,parameter :: z_i_nu=z_i ! initial redshift for neutrinos
   real,parameter :: a_i=1/(1+z_i) ! initial scale factor
 
-  real,parameter :: box=100.0  ! simulation scale /dim, in unit of Mpc/h
+  real,parameter :: box=300.0*nn  ! simulation scale /dim, in unit of Mpc/h
   real,parameter :: h0=67.74    ! Hubble constant
   real,parameter :: s8=0.8276   ! \sigma_8
   real,parameter :: ratio_nudm_dim=2 ! ratio of number of particles for neutrino/CDM, /dim
@@ -94,8 +97,8 @@ module parameters
   real,parameter :: ra_max=0.2
   real(8),parameter :: v_resolution=2.1/(int(2,8)**(izipv*8))
   real(8),parameter :: x_resolution=1.0/(int(2,8)**(izipx*8))
-  real(8),parameter :: vdisp_boost=0.5
-  real(8),parameter :: vrel_boost=2.0
+  !real(8),parameter :: vdisp_boost=1.0
+  real(8),parameter :: vrel_boost=2.5
 
   ! transfer function
   integer(8), parameter      :: nk_tf=2000
@@ -129,7 +132,9 @@ module parameters
     real omega_l
     real s8
     real vsim2phys
-    real z_i ! 40*4 bytes
+    real sigma_vres
+    real sigma_vi
+    real z_i ! 42*4 bytes
   endtype
 
   type(sim_header) sim
@@ -160,6 +165,8 @@ module parameters
       print*,'| omega_l      =',s%omega_l
       print*,'| sigma_8      =',s%s8
       print*,'| vsim2phys    =',s%vsim2phys, '(km/s)/(1.0)'
+      print*,'| sigma_vres   =',s%sigma_vres,'(km/s)'
+      print*,'| sigma_vi     =',s%sigma_vi,'(simulation unit)'
       print*,'| z_i          =',s%z_i
       print*,'------------------------------------------------------------------------------'
       endif

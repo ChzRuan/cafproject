@@ -1,16 +1,8 @@
-!#define debug
-!#define redundant
 subroutine buffer_density
   use variables
   implicit none
   save
-  integer(8) nshift,nlen,nlast,ifrom
-
-  ! the following variables are introduced because
-  ! gcc only allows <= 7 ranks in arrays
-  real(4) vtransx(3,ncb,nt+2*ncb,nt+2*ncb,nnt,nnt)[*]
-  real(4) vtransy(3,nt+2*ncb,ncb,nt+2*ncb,nnt,nnt)[*]
-  real(4) vtransz(3,nt+2*ncb,nt+2*ncb,ncb,nnt,nnt)[*]
+  integer(8) nshift,nlen,nlast,ifrom,checkxp0,checkxp1
 
   if (head) print*, 'buffer_density'
   overhead_image=0
@@ -24,10 +16,13 @@ subroutine buffer_density
   vtransx=vfield(:,nt-ncb+1:nt,:,:,nnt,:,:)
   sync all
   vfield(:,:0,:,:,1,:,:)=vtransx(:,:,:,:,:,:)[image1d(inx,icy,icz)]
+  sync all
   vfield(:,:0,:,:,2:,:,:)=vfield(:,nt-ncb+1:nt,:,:,:nnt-1,:,:)
+
   vtransx=vfield(:,1:ncb,:,:,1,:,:)
   sync all
   vfield(:,nt+1:,:,:,nnt,:,:)=vtransx(:,:,:,:,:,:)[image1d(ipx,icy,icz)]
+  sync all
   vfield(:,nt+1:,:,:,:nnt-1,:,:)=vfield(:,1:ncb,:,:,2:,:,:)
 
   sync all
@@ -43,11 +38,16 @@ subroutine buffer_density
   vtransy=vfield(:,:,nt-ncb+1:nt,:,:,nnt,:)
   sync all
   vfield(:,:,:0,:,:,1,:)=vtransy(:,:,:,:,:,:)[image1d(icx,iny,icz)]
+  sync all
   vfield(:,:,:0,:,:,2:,:)=vfield(:,:,nt-ncb+1:nt,:,:,1:nnt-1,:)
+
   vtransy=vfield(:,:,1:ncb,:,:,1,:)
   sync all
   vfield(:,:,nt+1:,:,:,nnt,:)=vtransy(:,:,:,:,:,:)[image1d(icx,ipy,icz)]
+  sync all
   vfield(:,:,nt+1:,:,:,:nnt-1,:)=vfield(:,:,1:ncb,:,1:,2:,:)
+
+  sync all
   !print*, 'sync y done', sum(rhoc)
 
   !z
@@ -60,11 +60,16 @@ subroutine buffer_density
   vtransz=vfield(:,:,:,nt-ncb+1:nt,:,:,nnt)
   sync all
   vfield(:,:,:,:0,:,:,1)=vtransz(:,:,:,:,:,:)[image1d(icx,icy,inz)]
+  sync all
   vfield(:,:,:,:0,:,:,2:)=vfield(:,:,:,nt-ncb+1:nt,:,:,:nnt-1)
+
   vtransz=vfield(:,:,:,1:ncb,:,:,1)
   sync all
   vfield(:,:,:,nt+1:,:,:,nnt)=vtransz(:,:,:,:,:,:)[image1d(icx,icy,ipz)]
+  sync all
   vfield(:,:,:,nt+1:,:,:,:nnt-1)=vfield(:,:,:,1:ncb,:,:,2:)
+
+  sync all
   !print*, 'sync z done', sum(rhoc)
 
   overhead_image=sum(rhoc*unit8)/real(np_image_max,8)
@@ -87,31 +92,29 @@ subroutine buffer_density
     stop
   endif
 
-  !print*, 'x before shift =', sum(x*unit8)
-  !print*, 'v before shift =', sum(v*unit8)
+  
 
-  ! move xv to the end, leave enough space for buffer
-  !print*,sum(rhoc),np_image_max
   nshift=np_image_max-nplocal
-  x(:,nshift+1:np_image_max)=x(:,1:nplocal)
-  v(:,nshift+1:np_image_max)=v(:,1:nplocal)
-  !x(:,:nshift)=0 ! redundant
-  !v(:,:nshift)=0 ! redundant
 
-#ifdef PID
-  pid(nshift+1:np_image_max)=pid(1:nplocal)
-#endif
+  checkxp0=sum(xp*int(1,kind=8))
 
-  !print*, 'x after shift=', sum(x*unit8)
+  xp(:,nshift+1:np_image_max)=xp(:,1:nplocal)
+  vp(:,nshift+1:np_image_max)=vp(:,1:nplocal)
+  xp(:,1:np_image_max-nplocal)=0
+  vp(:,1:np_image_max-nplocal)=0
+
+  checkxp1=sum(xp*int(1,kind=8))
+  if (checkxp0/=checkxp1) then
+    print*, 'wrong1',image,checkxp0,checkxp1
+  endif
+
+# ifdef PID
+    pid(nshift+1:np_image_max)=pid(1:nplocal)
+    pid(1:np_image_max-nplocal)=0
+# endif
 
   cum=cumsum6(rhoc)
-  !print*, 'cumsum of all particles =', cum(nt+ncb,nt+ncb,nt+ncb,nnt,nnt,nnt)
-  ! create extended zip
-
-  ! redistribute local particles -----------------
-
-  ! nshift is the offset between local (backed up at the end) and extented
-  ifrom=nshift ! ifrom is the index of shifted particles, contiuous
+  ifrom=nshift
 
   do itz=1,nnt
   do ity=1,nnt
@@ -122,17 +125,25 @@ subroutine buffer_density
       nlast=cum(nt,iy,iz,itx,ity,itz)
       ! nlen is the number of particle in this x-slot
       nlen=nlast-cum(0,iy,iz,itx,ity,itz)
-      x(:,nlast-nlen+1:nlast)=x(:,ifrom+1:ifrom+nlen)
-      v(:,nlast-nlen+1:nlast)=v(:,ifrom+1:ifrom+nlen)
-#ifdef PID
+      xp(:,nlast-nlen+1:nlast)=xp(:,ifrom+1:ifrom+nlen)
+      vp(:,nlast-nlen+1:nlast)=vp(:,ifrom+1:ifrom+nlen)
+      xp(:,ifrom+1:ifrom+nlen)=0
+      vp(:,ifrom+1:ifrom+nlen)=0
+#     ifdef PID
         pid(nlast-nlen+1:nlast)=pid(ifrom+1:ifrom+nlen)
-#endif
+        pid(ifrom+1:ifrom+nlen)=0
+#     endif
       ifrom=ifrom+nlen
     enddo
     enddo
   enddo
   enddo
   enddo
+
+  checkxp1=sum(xp*int(1,kind=8))
+  if (checkxp0/=checkxp1) then
+    print*, 'wrong2',image,checkxp0,checkxp1
+  endif
   !print*, 'redistributed local particles', sum(x*unit8)
   sync all
 endsubroutine buffer_density

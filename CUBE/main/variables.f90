@@ -32,11 +32,14 @@ module variables
 
   ! FFT plans
   integer(8) plan_fft_fine,plan_ifft_fine
-  real vmax,overhead_tile[*],overhead_image[*]
-  real vdisp(506,2),sigma_vi_old,sigma_vi
+  real vmax,overhead_tile[*],overhead_image[*],sigma_vi,sigma_vi_new
+  !real vdisp(506,2),sigma_vi_old,sigma_vi
+  real(4) svz(500,2),svr(100,2)
+  real(8) sigma_vci,sigma_vfi,sigma_vres,sigma_vci_old,sigma_vfi_old,sigma_vres_old
+  real(8) std_vsim_c[*],std_vsim_res[*],std_vsim[*]
   ! n^3
-  integer(izipx) x(3,np_image_max)[*], x_new(3,np_tile_max)
-  integer(izipv) v(3,np_image_max)[*], v_new(3,np_tile_max)
+  integer(izipx) xp(3,np_image_max)[*], xp_new(3,np_tile_max)
+  integer(izipv) vp(3,np_image_max)[*], vp_new(3,np_tile_max)
 #ifdef PID
     integer(8) pid(np_image_max)[*], pid_new(np_tile_max)
 #endif
@@ -50,6 +53,11 @@ module variables
   real(4) vfield(3,1-ncb:nt+ncb,1-ncb:nt+ncb,1-ncb:nt+ncb,nnt,nnt,nnt) ! cannot have >7 dims
   integer(8) cum(1-ncb:nt+ncb,1-ncb:nt+ncb,1-ncb:nt+ncb,nnt,nnt,nnt)[*]
 
+  ! the following variables are introduced because
+  ! gcc only allows <= 7 ranks in arrays
+  real(4) vtransx(3,ncb,nt+2*ncb,nt+2*ncb,nnt,nnt)[*]
+  real(4) vtransy(3,nt+2*ncb,ncb,nt+2*ncb,nnt,nnt)[*]
+  real(4) vtransz(3,nt+2*ncb,nt+2*ncb,ncb,nnt,nnt)[*]
 
   ! coarse kernel arrays
   real ck(3,nc,nc,nc)
@@ -101,22 +109,34 @@ contains
     enddo
   endfunction
 
-  real function interp_vdisp(aa)
+  real function interp_sigmav(aa,rr)
     implicit none
     integer(8) ii,i1,i2
-    real aa
+    real aa,rr,term_z,term_r
     i1=1
-    i2=506
+    i2=500
     do while (i2-i1>1)
       ii=(i1+i2)/2
-      if (aa>vdisp(ii,1)) then
+      if (aa>svz(ii,1)) then
         i1=ii
       else
         i2=ii
       endif
     enddo
-    interp_vdisp=vdisp(i1,2)+(vdisp(i2,2)-vdisp(i1,2))*(aa-vdisp(i1,1))/(vdisp(i2,1)-vdisp(i1,1))
+    term_z=svz(i1,2)+(svz(i2,2)-svz(i1,2))*(aa-svz(i1,1))/(svz(i2,1)-svz(i1,1))
+    i1=1
+    i2=100
+    do while (i2-i1>1)
+      ii=(i1+i2)/2
+      if (rr>svz(ii,1)) then
+        i1=ii
+      else
+        i2=ii
+      endif
+    enddo
+    term_r=svr(i1,2)+(svr(i2,2)-svr(i1,2))*(rr-svr(i1,1))/(svr(i2,1)-svr(i1,1))
+    interp_sigmav=term_z*term_r
+    print*,term_z,term_r
   endfunction
-
 
 endmodule
